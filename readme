@@ -1,0 +1,116 @@
+    Pass {
+        Name "ShadowCaster"
+        Tags { "LightMode" = "ShadowCaster" }
+        
+		CGPROGRAM
+		#pragma vertex vert
+		#pragma fragment frag
+		#pragma target 2.0
+		#pragma multi_compile_shadowcaster
+		#pragma multi_compile_instancing // allow instanced shadow pass for most of the shaders
+		#include "UnityCG.cginc"
+
+            //uniform float4 _EmissionColor;
+	struct v2f { 
+    V2F_SHADOW_CASTER;
+    UNITY_VERTEX_OUTPUT_STEREO
+	};
+	struct appdata
+            {
+                float4 pos : POSITION;
+                float2 uv : TEXCOORD0;
+				float2 noise : TEXCOORD1;
+				float3 norm : NORMAL;
+            };
+			struct g2f{
+                float4 pos : SV_POSITION;
+                float2 uv : TEXCOORD0;
+            };
+	        sampler2D _MainTex, _Noise, _Gradient;
+            float4 _MainTex_ST, _Noise_ST, _Gradient_ST, _Color, _Color2;
+			float _amount;
+			uniform float _fullness, _clip;
+			uniform float _DisplacementStrength, _Burnprogress;
+			uniform float _TriMin, _TriMax;
+			uniform float _xaxis, _yaxis, _zaxis;
+
+	appdata_base vert( appdata v )
+		{
+        v.pos = v.pos;
+        v.uv = TRANSFORM_TEX(v.uv, _MainTex);
+		v.noise = TRANSFORM_TEX(v.uv, _Noise);
+        return v; }
+
+	[maxvertexcount(3)]
+	void geom( triangle appdata_base input[3], inout TriangleStream<v2f> tristream )
+	{
+	for (int ii = 0; ii < 3; ii++) {
+     appdata_base v = input[ii];
+	 		v.vertex = local_vertex_pos;
+			v.normal = local_vertex_normal;
+				float4 b = (input[0].pos + input[1].pos + input[2].pos)/3.0;
+				float gradtex = tex2Dlod(_Gradient, float4( input[0].uv, 0, 0).r);
+				float gradient = lerp(0,.1,(length((input[0].pos.y - _Burnprogress )))*_Burnprogress);
+				float Zon = -1;
+				float temp = clamp((((input[0].pos.y - 1)) - (_Burnprogress*3)),0,2);
+				float temp1 = temp + _Burnprogress;
+				float grad1 = ((gradtex*.01) + _Burnprogress);
+				float noisetex = tex2Dlod(_Noise, float4( input[0].uv, 0, 0).r);
+				float noisemod = lerp(0, _fullness, noisetex);
+				float pos2 = clamp(frac(noisemod*4.0)*_DisplacementStrength - 0, 0,1);
+				float pos = (clamp((noisemod*4.0)*_DisplacementStrength - _amount, 0,1))*(temp);
+				float decay = pos/2;
+				float decay2 = clamp(lerp(1,-2,decay),0,1);
+				float truepos = pos;
+				float truedecay = clamp(decay2*2,0,1);
+
+
+				//FIRST VERTEX
+                o.uv = input[0].uv;
+                local_vertex_pos = (b + (input[0].pos - b)*(truedecay)- float4(0, Zon, (input[0].norm.z * Zon/2), 0)*truepos);
+
+                tristream.Append(o);
+
+                //SECOND VERTEX
+                o.uv = input[1].uv;
+                local_vertex_pos = (b + (input[1].pos - b)*(truedecay) - float4(0, Zon, (input[0].norm.z * Zon/2), 0)*truepos);
+
+                tristream.Append(o);
+
+                //THIRD VERTEX
+                o.uv = input[2].uv;
+                local_vertex_pos = (b + (input[2].pos - b)*(truedecay) - float4(0, Zon, (input[0].norm.z * Zon/2), 0)*truepos);
+
+                tristream.Append(o);
+
+				tristream.RestartStrip();
+				//FIRST VERTEX
+                o.uv = input[0].uv;
+                local_vertex_pos = (b + (input[0].pos - b)*(truedecay)- float4(0, Zon, (input[0].norm.z * Zon/2), 0)*(truepos*.5));
+
+                tristream.Append(o);
+
+                //SECOND VERTEX
+                o.uv = input[1].uv;
+                local_vertex_pos = (b + (input[1].pos - b)*(truedecay) - float4(0, Zon, (input[0].norm.z * Zon/2), 0)*(truepos*.5));
+
+                tristream.Append(o);
+
+                //THIRD VERTEX
+                o.uv = input[2].uv;
+                local_vertex_pos = (b + (input[2].pos - b)*(truedecay) - float4(0, Zon, (input[0].norm.z * Zon/2), 0)*(truepos*.5));
+
+                tristream.Append(o);
+    v2f o;
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+    TRANSFER_SHADOW_CASTER_NOPOS(o, o.pos);
+    tristream.Append(o);
+    }
+}
+
+	float4 frag( v2f i ) : SV_Target
+	{
+    SHADOW_CASTER_FRAGMENT(i)
+	}
+	ENDCG
